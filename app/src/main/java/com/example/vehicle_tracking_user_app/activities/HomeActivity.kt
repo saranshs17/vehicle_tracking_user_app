@@ -45,6 +45,9 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var geoFire: GeoFire
 
+    // Map to store markers keyed by driverId.
+    private val markersMap = mutableMapOf<String, Marker>()
+
     // Bottom sheet is a ConstraintLayout
     private lateinit var bottomSheet: ConstraintLayout
     private lateinit var bottomSheetBehavior: BottomSheetBehavior<ConstraintLayout>
@@ -197,13 +200,35 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
             override fun onKeyEntered(key: String, location: GeoLocation) {
                 val driverLatLng = LatLng(location.latitude, location.longitude)
                 runOnUiThread {
-                    val markerOptions = MarkerOptions().position(driverLatLng).title(key)
-                    mMap.addMarker(markerOptions)
+                    if (markersMap.containsKey(key)) {
+                        // Update marker position if it already exists.
+                        markersMap[key]?.position = driverLatLng
+                    } else {
+                        val markerOptions = MarkerOptions().position(driverLatLng).title(key)
+                        val marker = mMap.addMarker(markerOptions)
+                        if (marker != null) {
+                            markersMap[key] = marker
+                        }
+                    }
                 }
             }
-            override fun onKeyExited(key: String) {}
-            override fun onKeyMoved(key: String, location: GeoLocation) {}
+
+            override fun onKeyExited(key: String) {
+                runOnUiThread {
+                    markersMap[key]?.remove()
+                    markersMap.remove(key)
+                }
+            }
+
+            override fun onKeyMoved(key: String, location: GeoLocation) {
+                val newLatLng = LatLng(location.latitude, location.longitude)
+                runOnUiThread {
+                    markersMap[key]?.position = newLatLng
+                }
+            }
+
             override fun onGeoQueryReady() {}
+
             override fun onGeoQueryError(error: DatabaseError) {
                 Toast.makeText(this@HomeActivity, "GeoQuery error: ${error.message}", Toast.LENGTH_SHORT).show()
             }

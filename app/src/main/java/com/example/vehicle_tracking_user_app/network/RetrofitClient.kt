@@ -1,10 +1,11 @@
 package com.example.vehicle_tracking_user_app.network
 
+import com.example.vehicle_tracking_user_app.BuildConfig
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
-    private const val BASE_URL = "http://192.168.216.84:5000/"
+    private val BASE_URL = BuildConfig.BASE_URL
 
     val instance: Retrofit by lazy {
         Retrofit.Builder()
