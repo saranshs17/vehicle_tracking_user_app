@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
+import android.os.Looper
+import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
@@ -16,11 +18,18 @@ import com.example.vehicle_tracking_user_app.R
 import com.example.vehicle_tracking_user_app.models.DriverRequest
 import com.example.vehicle_tracking_user_app.models.DriverResponse
 import com.example.vehicle_tracking_user_app.models.GenericResponse
+import com.example.vehicle_tracking_user_app.models.RequestStatusResponse
 import com.example.vehicle_tracking_user_app.network.ApiService
 import com.example.vehicle_tracking_user_app.network.RetrofitClient
 import com.firebase.geofire.GeoFire
 import com.firebase.geofire.GeoLocation
 import com.firebase.geofire.GeoQueryEventListener
+import com.google.android.gms.location.FusedLocationProviderClient
+
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
@@ -31,8 +40,11 @@ import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.GenericTypeIndicator
+import com.google.firebase.database.ValueEventListener
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -48,6 +60,9 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
     // Map to store markers keyed by driverId.
     private val markersMap = mutableMapOf<String, Marker>()
 
+    // GeoFire instance for updating user's location (using "user_locations" node)
+    private lateinit var userGeoFire: GeoFire
+
     // Bottom sheet is a ConstraintLayout
     private lateinit var bottomSheet: ConstraintLayout
     private lateinit var bottomSheetBehavior: BottomSheetBehavior<ConstraintLayout>
@@ -58,6 +73,12 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private var selectedDriverId: String? = null
     private lateinit var bottomNavigationView: BottomNavigationView
+
+    // Location updates
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationCallback: LocationCallback
+
+    private var shouldHideButton = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,7 +115,7 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
                     }
                     BottomSheetBehavior.STATE_EXPANDED -> {
                         // Make sure button is visible in expanded state
-                        btnSendRequest.visibility = View.VISIBLE
+                        btnSendRequest.visibility = if (shouldHideButton) View.GONE else View.VISIBLE
                     }
                     BottomSheetBehavior.STATE_DRAGGING -> {
                         // Optional: Handle dragging state if needed
@@ -146,13 +167,42 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
         // Setup GeoFire for "driver_locations"
-        val databaseRef = FirebaseDatabase.getInstance().getReference("driver_locations")
-        geoFire = GeoFire(databaseRef)
+        val driverRef = FirebaseDatabase.getInstance().getReference("driver_locations")
+        geoFire = GeoFire(driverRef)
+
+        // Setup GeoFire for "user_locations"
+        val userRef = FirebaseDatabase.getInstance().getReference("user_locations")
+        userGeoFire = GeoFire(userRef)
+
+        // Initialize location updates
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        setupLocationUpdates()
 
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
     }
-
+    private fun setupLocationUpdates() {
+        val locationRequest = LocationRequest.create().apply {
+            interval = 10000    // update every 10 seconds
+            fastestInterval = 5000 // fastest update every 5 seconds
+            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+        }
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult ?: return
+                for (location in locationResult.locations) {
+                    // Update driver's location.
+//                    updateDriverLocation(location)
+                    // Update user's location if needed.
+                    updateUserLocation(location)
+                }
+            }
+        }
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
+        }
+    }
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
 
@@ -177,6 +227,7 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
                 userLocation = location
                 val userLatLng = LatLng(location.latitude, location.longitude)
                 mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(userLatLng, 15f))
+                updateUserLocation(location)
                 queryNearbyDrivers(location)
             } else {
                 Toast.makeText(this, "Unable to retrieve location.", Toast.LENGTH_SHORT).show()
@@ -188,9 +239,53 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
             val driverId = marker.title
             if (driverId != null) {
                 selectedDriverId = driverId
-                fetchDriverDetailsFromBackend(driverId)
+//                checkRequestStatusForDriver(driverId)
+//                fetchDriverDetailsFromBackend(driverId)
+                handleMarkerClick(driverId)
             }
             true
+        }
+    }
+    // New version: check request status with a callback
+    private fun checkRequestStatusForDriver(driverId: String, callback: (Boolean) -> Unit) {
+        val token = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("token", "") ?: ""
+        val apiService = RetrofitClient.instance.create(ApiService::class.java)
+
+        apiService.getRequestForDriver("Bearer $token", driverId)
+            .enqueue(object : Callback<RequestStatusResponse> {
+                override fun onResponse(
+                    call: Call<RequestStatusResponse>,
+                    response: Response<RequestStatusResponse>
+                ) {
+                    if (response.isSuccessful) {
+                        val status = response.body()?.status ?: "pending"
+                        val accepted = status.equals("accepted", ignoreCase = true)
+//                        Toast.makeText(this@HomeActivity, "${accepted}", Toast.LENGTH_SHORT).show()
+                        callback(accepted)
+                    } else {
+                        // On error, we assume not accepted so show button.
+                        callback(false)
+                    }
+                }
+                override fun onFailure(call: Call<RequestStatusResponse>, t: Throwable) {
+                    callback(false)
+                    Toast.makeText(this@HomeActivity, "Error: ${t.message}", Toast.LENGTH_SHORT).show()
+                }
+            })
+    }
+
+    // This function handles a marker click by first checking the request status,
+// then fetching driver details.
+    private fun handleMarkerClick(driverId: String) {
+        checkRequestStatusForDriver(driverId) { accepted ->
+            shouldHideButton = accepted
+            bottomSheetBehavior.state = BottomSheetBehavior.STATE_EXPANDED
+//            if (accepted) {
+//                btnSendRequest.visibility = View.GONE
+//            } else {
+//                btnSendRequest.visibility = View.VISIBLE
+//            }
+            fetchDriverDetailsFromBackend(driverId)
         }
     }
 
@@ -233,6 +328,22 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
                 Toast.makeText(this@HomeActivity, "GeoQuery error: ${error.message}", Toast.LENGTH_SHORT).show()
             }
         })
+    }
+    // Update user's location in Firebase using GeoFire.
+    private fun updateUserLocation(location: Location) {
+        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        val userId = prefs.getString("userId", null)
+        if (userId == null) {
+            Toast.makeText(this, "User ID not set. Please login again.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        userGeoFire.setLocation(userId, GeoLocation(location.latitude, location.longitude)) { key, error ->
+            if (error != null) {
+                Log.e("GeoFire", "Error updating location for user: $key, error: ${error.message}")
+            } else {
+                Log.d("GeoFire", "User location updated successfully for: $key")
+            }
+        }
     }
 
     private fun fetchDriverDetailsFromBackend(driverId: String) {
@@ -289,5 +400,64 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             Toast.makeText(this, "Location permission is required", Toast.LENGTH_SHORT).show()
         }
+    }
+    private var userMarker: Marker? = null
+    private fun startUserLocationListener(userId: String) {
+        val userRef = FirebaseDatabase.getInstance().getReference("user_locations").child(userId)
+        userRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.exists()) {
+                    val typeIndicator = object : GenericTypeIndicator<List<Double>>() {}
+                    val locationList = snapshot.child("l").getValue(typeIndicator)
+                    if (locationList != null && locationList.size >= 2) {
+                        val lat = locationList[0]
+                        val lng = locationList[1]
+                        val userLatLng = LatLng(lat, lng)
+                        if (userMarker == null) {
+                            userMarker = mMap.addMarker(MarkerOptions().position(userLatLng).title("Accepted User"))
+                        } else {
+                            userMarker?.position = userLatLng
+                        }
+                    }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                Toast.makeText(this@HomeActivity, "Error: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+
+    private fun checkRequestStatusForDriver(driverId: String) {
+        val token = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("token", "") ?: ""
+        val apiService = RetrofitClient.instance.create(ApiService::class.java)
+
+        apiService.getRequestForDriver("Bearer $token", driverId)
+            .enqueue(object : Callback<RequestStatusResponse> {
+                override fun onResponse(call: Call<RequestStatusResponse>, response: Response<RequestStatusResponse>) {
+                    if (response.isSuccessful) {
+                        val status = response.body()?.status ?: "pending"
+                        if (status.equals("accepted", ignoreCase = true)) {
+                            btnSendRequest.visibility = View.GONE
+                        } else {
+                            btnSendRequest.visibility = View.VISIBLE
+                        }
+                    } else {
+                        // If response is not successful, you might choose to show the button.
+                        btnSendRequest.visibility = View.VISIBLE
+                    }
+                }
+
+                override fun onFailure(call: Call<RequestStatusResponse>, t: Throwable) {
+                    btnSendRequest.visibility = View.VISIBLE
+                    Toast.makeText(this@HomeActivity, "Error: ${t.message}", Toast.LENGTH_SHORT).show()
+                }
+            })
+    }
+
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Stop location updates to avoid leaks.
+        fusedLocationClient.removeLocationUpdates(locationCallback)
     }
 }

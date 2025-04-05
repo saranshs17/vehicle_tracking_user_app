@@ -22,11 +22,11 @@ interface ApiService {
     fun updateToken(@Header("Authorization") token: String, @Body tokenUpdate: TokenUpdateRequest ) : Call<GenericResponse>
 
     @GET("api/driver/{driverId}")
-    fun getDriverById(
-        @Header("Authorization") token: String,
-        @Path("driverId") driverId: String
-    ): Call<DriverResponse>
+    fun getDriverById(@Header("Authorization") token: String, @Path("driverId") driverId: String): Call<DriverResponse>
 
     @POST("api/user/request")
     fun requestDriver(@Header("Authorization") token: String, @Body request: DriverRequest): Call<GenericResponse>
+    @GET("api/user/request/status")
+    fun getRequestForDriver(@Header("Authorization") token: String, @Query("driverId") driverId: String): Call<RequestStatusResponse>
+
 }

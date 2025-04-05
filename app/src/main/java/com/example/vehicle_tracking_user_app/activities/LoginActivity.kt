@@ -12,6 +12,9 @@ import com.example.vehicle_tracking_user_app.models.LoginRequest
 import com.example.vehicle_tracking_user_app.models.LoginResponse
 import com.example.vehicle_tracking_user_app.network.ApiService
 import com.example.vehicle_tracking_user_app.network.RetrofitClient
+import com.firebase.geofire.GeoFire
+import com.firebase.geofire.GeoLocation
+import com.google.firebase.database.FirebaseDatabase
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -47,9 +50,24 @@ class LoginActivity : AppCompatActivity() {
                 override fun onResponse(call: Call<LoginResponse>, response: Response<LoginResponse>) {
                     if (response.isSuccessful) {
                         val token = response.body()?.token ?: ""
+                        val userId = response.body()?.userId ?: ""
                         // Save token in SharedPreferences for subsequent calls.
                         val sharedPref = getSharedPreferences("app_prefs", MODE_PRIVATE)
-                        sharedPref.edit().putString("token", token).apply()
+                        sharedPref.edit().apply {
+                            putString("token", token)
+                            putString("userId", userId)
+                            apply()
+                        }
+
+                        val userRef = FirebaseDatabase.getInstance().getReference("user_locations")
+                        val geoFire = GeoFire(userRef)
+                        geoFire.setLocation(userId, GeoLocation(0.0, 0.0)) { key, error ->
+                            if (error != null) {
+                                // Log error if needed.
+                            } else {
+                                // Optionally log success.
+                            }
+                        }
 
                         // Navigate to HomeActivity.
                         startActivity(Intent(this@LoginActivity, HomeActivity::class.java))

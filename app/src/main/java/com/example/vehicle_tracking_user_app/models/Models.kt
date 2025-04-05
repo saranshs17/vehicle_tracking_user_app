@@ -14,9 +14,9 @@ data class LoginRequest(
 )
 
 data class LoginResponse(
-    val token: String
+    val token: String,
+    val userId: String
 )
-
 data class UserProfile(
     val _id: String,
     val name: String,
@@ -52,4 +52,14 @@ data class DriverResponse(
     val phone: String,
     val plateNumber: String,
     val status: String,
+)
+data class UserResponse(
+    val _id: String,
+    val name: String,
+    val email: String,
+    val phone: String
+)
+
+data class RequestStatusResponse(
+    val status: String
 )
