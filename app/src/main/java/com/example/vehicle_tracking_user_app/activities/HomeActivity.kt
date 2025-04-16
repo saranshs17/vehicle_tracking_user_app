@@ -3,6 +3,8 @@ package com.example.vehicle_tracking_user_app.activities
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.location.Location
 import android.os.Bundle
 import android.os.Looper
@@ -11,6 +13,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
@@ -36,10 +39,12 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.color.DynamicColors
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
@@ -82,6 +87,8 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DynamicColors.applyToActivityIfAvailable(this)
+        enableEdgeToEdge()
         setContentView(R.layout.activity_home)
 
         // Initialize bottom sheet views
@@ -205,7 +212,20 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
     }
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
-
+        val nightModeFlags = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        val styleRes = if (nightModeFlags == Configuration.UI_MODE_NIGHT_YES) {
+            R.raw.midnight // Your night style JSON file in res/raw
+        } else {
+            R.raw.gmaps       // Your day style JSON file in res/raw
+        }
+        try {
+            val success = mMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(this, styleRes))
+            if (!success) {
+                Log.e("MapStyle", "Style parsing failed.")
+            }
+        } catch (e: Resources.NotFoundException) {
+            Log.e("MapStyle", "Can't find style. Error: ", e)
+        }
         // Request location permissions if needed
         if (ActivityCompat.checkSelfPermission(
                 this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||

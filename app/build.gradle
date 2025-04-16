@@ -71,4 +71,6 @@ dependencies {
 
     // GeoFire for querying geolocations in Firebase
     implementation 'com.firebase:geofire-android:2.3.1'
+
+    implementation 'com.airbnb.android:lottie:6.6.6'
 }
