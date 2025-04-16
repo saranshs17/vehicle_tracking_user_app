@@ -6,17 +6,20 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.location.Location
+import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.example.vehicle_tracking_user_app.R
 import com.example.vehicle_tracking_user_app.models.DriverRequest
 import com.example.vehicle_tracking_user_app.models.DriverResponse
@@ -75,7 +78,7 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var tvDriverContact: TextView
     private lateinit var btnSendRequest: Button
     private lateinit var dragHandle: View
-
+    private lateinit var callicon: ImageView
     private var selectedDriverId: String? = null
     private lateinit var bottomNavigationView: BottomNavigationView
 
@@ -97,7 +100,7 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
         tvDriverContact = findViewById(R.id.tvDriverContact)
         btnSendRequest = findViewById(R.id.btnSendRequest)
         dragHandle = findViewById(R.id.dragHandle)
-
+        callicon = findViewById(R.id.call_icon)
         // Configure the bottom sheet behavior
         bottomSheetBehavior = BottomSheetBehavior.from(bottomSheet)
         bottomSheetBehavior.state = BottomSheetBehavior.STATE_HIDDEN
@@ -378,6 +381,12 @@ class HomeActivity : AppCompatActivity(), OnMapReadyCallback {
                             tvDriverName.text = "Driver: ${driverData.name}"
                             tvDriverContact.text = "Contact: ${driverData.phone}"
                             bottomSheetBehavior.state = BottomSheetBehavior.STATE_EXPANDED
+                            callicon.setOnClickListener {
+                                val intent = Intent(Intent.ACTION_DIAL).apply {
+                                    data = Uri.parse("tel:${driverData.phone}")
+                                }
+                                ContextCompat.startActivity(it.context, intent, null)
+                            }
                         }
                     } else {
                         Toast.makeText(this@HomeActivity, "Driver details not found (API).", Toast.LENGTH_SHORT).show()
